@@ -1,0 +1,9 @@
+[package]
+name = "fqrst"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+structopt = "^0.3"
+needletail = "^0.4"
+bloom = "^0.3"
