@@ -1,5 +1,7 @@
 extern crate bloom;
 extern crate fastq;
+extern crate num_format;
+
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 // use std::sync::atomic::{AtomicU32, AtomicU64};
@@ -8,6 +10,7 @@ use std::time::{Instant};
 use structopt::StructOpt;
 // use bloom::{ASMS, BloomFilter};
 use fastq::{parse_path, Record};
+use num_format::{Locale, ToFormattedString};
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "example", about = "An example of StructOpt usage.")]
@@ -65,11 +68,11 @@ impl FastqStats {
     }
 
     fn print_stats(self, offset: Option<f64>) {
-        println!("Total reads: {}", self.num_reads);
-        println!("Total bases: {}", self.num_bases);
+        println!("Total reads: {}", self.num_reads.to_formatted_string(&Locale::en));
+        println!("Total bases: {}", self.num_bases.to_formatted_string(&Locale::en));
         println!("Min read len: {}", self.min_read_len);
         println!("Max read len: {}", self.max_read_len);
-        println!("Mean Q score: {}", self.mean_q_score(offset));
+        println!("Mean Q score: {:.2}", self.mean_q_score(offset));
     }
 
     fn _get(self) -> (u32, u64, u16, u16, u64, u64) {
