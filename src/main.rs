@@ -119,6 +119,6 @@ fn main() {
         let fq_lock = fastq_stats.lock().unwrap();
         fq_lock.print_stats(Some(qual_offset));
         println!("Elapsed time: {} seconds", elapsed);
-        println!("Processing rate: {} read/second", fq_lock.num_reads as f64 / elapsed);
+        println!("Processing rate: {} reads/second", fq_lock.num_reads as f64 / elapsed);
     }).expect("Invalid compression");
 }
