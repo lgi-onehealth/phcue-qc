@@ -1,11 +1,11 @@
 extern crate bloom;
-extern crate needletail;
+extern crate fastq;
 use std::path::PathBuf;
-use std::collections::HashMap;
+// use std::collections::HashMap;
 use std::time::{Instant};
 use structopt::StructOpt;
-use needletail::{parse_fastx_file, Sequence}; //, FastxReader};
-use bloom::{ASMS, BloomFilter};
+// use bloom::{ASMS, BloomFilter};
+use fastq::{parse_path, Record};
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "example", about = "An example of StructOpt usage.")]
@@ -35,72 +35,38 @@ struct Opt {
 
 fn main() {
     let opt = Opt::from_args();
-    println!("Working on: {:?}", opt.input);
-    let mut n_bases: u64 = 0;
-    let mut total_qual: u64 = 0;
-    let mut n_seqs: u64 = 0;
-    let mut max_read_len: u16 = 0;
-    let mut min_read_len: u16 = std::u16::MAX;
-    let mut read_len: u16;
-    let mut bf: BloomFilter = BloomFilter::with_rate(0.01, 10_000_000);
-    // let mut n_valid_kmers = 0;
-    let mut kmer_counter: HashMap<String, u64> = HashMap::with_capacity(10_000_000);
-    let mut reader = parse_fastx_file(&opt.input).expect("valid path/file");
+    eprintln!("Working on: {:?}", opt.input);
+    // let mut bf: BloomFilter = BloomFilter::with_rate(0.01, 10_000_000);
+    // let mut kmer_counter: HashMap<String, u64> = HashMap::with_capacity(10_000_000);
     eprintln!("Starting to parse file...");
     let start = Instant::now();
-    while let Some(record) = reader.next() {
-        let seqrec = record.expect("invalid record");
-        // keep track of the total number of bases
-        n_bases += seqrec.num_bases() as u64;
-        // keep track of Q score
-        total_qual += seqrec.qual().unwrap().iter().map(|&q| q as u64).sum::<u64>();
-        // keep track of the number of sequences
-        n_seqs += 1;
-        // keep track of the max and min read lengths
-        read_len = seqrec.num_bases() as u16;
-        if read_len > max_read_len {
-            max_read_len = read_len;
-        } else if read_len < min_read_len {
-            min_read_len = read_len;
+    parse_path(Some(&opt.input), |parser| {
+        let n_threads = 4;
+        let results: Vec<(u32,u64,u64)> = parser.parallel_each(n_threads, move |record_sets| {
+            let mut total_reads: u32 = 0;
+            let mut total_bases: u64 = 0;
+            let mut total_qual: u64 = 0;
+            for record_set in record_sets {
+                for _record in record_set.iter() {
+                    total_reads += 1;
+                    total_bases += _record.seq().len() as u64;
+                    total_qual += _record.qual().iter().map(|x| *x as u64).sum::<u64>();
         }
-        // normalize to make sure all the bases are consistently capitalized and
-        // that we remove the newlines since this is FASTA
-        let norm_seq = seqrec.normalize(false);
-        // we make a reverse complemented copy of the sequence first for
-        // `canonical_kmers` to draw the complemented sequences from.
-        let rc = norm_seq.reverse_complement();
-        // now we keep track of the number of AAAAs (or TTTTs via
-        // canonicalization) in the file; note we also get the position (i.0;
-        // in the event there were `N`-containing kmers that were skipped)
-        // and whether the sequence was complemented (i.2) in addition to
-        // the canonical kmer (i.1)
-        for (_, kmer, _) in norm_seq.canonical_kmers(31, &rc) {
-            let kmer = String::from_utf8_lossy(kmer).into_owned();
-            // if !bf.contains(&kmer) {
-            //     bf.insert(&kmer);
-            //     n_valid_kmers += 1;
-            // }
-            if !bf.contains(&kmer) {
-                bf.insert(&kmer);
-            } else {
-                *kmer_counter.entry(kmer).or_insert(1) += 1;
             }
-        }
-        if n_seqs % 10_000 == 0 {
-            let time_spent = start.elapsed().as_millis();
-            eprintln!("Total reads processed: {} ({} reads/msecond - total time {} seconds)", n_seqs, n_seqs as f64/time_spent as f64, time_spent as f64/1000.0);
-        }
-        if n_seqs > 20_000 {
-            break;
-        }
-    }
-    println!("Total reads: {}", n_seqs);
-    println!("Total nucleotides: {}", n_bases);
-    println!("Mean Q score: {}", (total_qual as f64/n_bases as f64)-33.0);
-    println!("Max read length: {}", max_read_len);
-    println!("Min read length: {}", min_read_len);
-    for i in 2..11 {
-        let total_kmers = kmer_counter.values().filter(|&x| *x >= i).count();
-        println!("Total kmers witn count of at least {}: {}", i, total_kmers);
-    }
+            (total_reads, total_bases, total_qual)
+        }).expect("Invalid FASTQ file.");
+        let qual_offset = 33.0;
+        let elapsed = start.elapsed().as_secs() as f64;
+        let total_reads: u32 = results.iter().map(|x| x.0).sum();
+        let total_bases: u64 = results.iter().map(|x| x.1).sum();
+        let mean_q_score: f64 = (results.iter().map(|x| x.2).sum::<u64>() as f64 / total_bases as f64) - qual_offset;
+        let reads_per_second = total_reads as f64 / elapsed;
+        println!("Total reads: {} ({} reads/second)", total_reads, reads_per_second);
+        println!("Total bases: {}", total_bases);
+        println!("Total bases (parallel): {}", par_total_nucleotides.load(std::sync::atomic::Ordering::Relaxed));
+        println!("Mean quality score: {}", mean_q_score);
+        println!("Total time spent: {}s", elapsed);
+        println!("Total readsets processed: {}", results.len());
+        println!("The results vector: {:?}", results);
+    }).expect("Invalid compression");
 }
