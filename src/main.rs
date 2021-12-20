@@ -1,4 +1,6 @@
+extern crate bio;
 extern crate bloom;
+extern crate dashmap;
 extern crate fastq;
 extern crate num_format;
 
@@ -8,8 +10,10 @@ use std::sync::{Arc, Mutex};
 // use std::collections::HashMap;
 use std::time::{Instant};
 use structopt::StructOpt;
+use bio::alphabets::dna;
+use dashmap::DashMap;
 // use bloom::{ASMS, BloomFilter};
-use fastq::{parse_path, Record};
+use fastq::{parse_path, Record, RefRecord};
 use num_format::{Locale, ToFormattedString};
 
 #[derive(Debug, StructOpt)]
@@ -84,18 +88,44 @@ impl FastqStats {
     }    
 }
 
+
+trait Kmers {
+    fn get_kmers<'a> (&self, k: usize) ->  Vec<Vec<u8>>;
+}
+
+impl Kmers for RefRecord<'_> {
+    
+    fn get_kmers<'a> (&self, k: usize) ->  Vec<Vec<u8>> {
+        let seq = self.seq().iter().map(|b| *b).collect::<Vec<u8>>();
+        let comp = seq.iter().map(|b| dna::complement(*b)).collect::<Vec<u8>>();
+        let iter = seq.windows(k).zip(comp.windows(k));
+        // Box::new(iter.map(|ks| std::borrow::Cow::from(std::cmp::min(ks.0, ks.1).copy())))
+        iter.map(|ks| {
+            let a = ks.0.iter().map(|n| *n).collect::<Vec<u8>>();
+            let b = ks.1.iter().map(|n| *n).collect::<Vec<u8>>();
+            std::cmp::min(a, b)}
+        ).collect::<Vec<Vec<u8>>>()
+        
+    }
+}
+
 fn main() {
     let opt = Opt::from_args();
     eprintln!("Working on: {:?}", opt.input);
     let fastq_stats = Arc::new(Mutex::new(FastqStats::new()));
+    let kmers = Arc::new(DashMap::with_capacity(10_000_000));
     // let mut bf: BloomFilter = BloomFilter::with_rate(0.01, 10_000_000);
     // let mut kmer_counter: HashMap<String, u64> = HashMap::with_capacity(10_000_000);
     eprintln!("Starting to parse file...");
     let start = Instant::now();
     parse_path(Some(&opt.input), |parser| {
-        let n_threads = 4;
+        let n_threads = 8;
         let local_stats = Arc::clone(&fastq_stats);
+        let local_kmers = Arc::clone(&kmers);
         let _results: Vec<u32> = parser.parallel_each(n_threads, move |record_sets| {
+            let msg = String::from("Starting to process new batch of reads...");
+            eprintln!("{}", msg);
+            let kmer_len = 21;
             let mut total_reads: u32 = 0;
             let mut total_bases: u64 = 0;
             let mut total_qual: u64 = 0;
@@ -108,17 +138,44 @@ fn main() {
                     total_qual += _record.qual().iter().map(|x| *x as u64).sum::<u64>();
                     min_read_len = std::cmp::min(min_read_len, _record.seq().len() as u16);
                     max_read_len = std::cmp::max(max_read_len, _record.seq().len() as u16);
+                    let rc_win = dna::revcomp(_record.seq()).into_iter().rev().collect::<Vec<u8>>();
+                    let seq_win = _record.seq().windows(kmer_len);
+                    seq_win.zip(rc_win.windows(kmer_len)).for_each(|ks| {
+                        let k1 = ks.0.clone().to_vec();
+                        let mut k2 = ks.1.clone().to_vec();
+                        k2.reverse();
+                        *local_kmers.entry(std::cmp::min(k1, k2)).or_insert(0) += 1});
                 }
             }
             let mut ls = local_stats.lock().unwrap();
             ls.update(total_reads, total_bases, min_read_len, max_read_len, total_qual);
+            println!("Finalizing batch...");
             total_reads
         }).expect("Invalid FASTQ file.");
+        println!("Finished processing file.");
         let qual_offset = 33.0;
-        let elapsed = start.elapsed().as_secs() as f64;
+        let elapsed = start.elapsed().as_millis() as f64 * 0.001;
         let fq_lock = fastq_stats.lock().unwrap();
         fq_lock.print_stats(Some(qual_offset));
+        println!("Total kmers: {}", kmers.len().to_formatted_string(&Locale::en));
+        for i in 1..50 {
+            let num_kmers = kmers.iter().filter(|x| *x.value() == i).count().to_formatted_string(&Locale::en);
+            println!("Unique kmers with count of {}: {}", i, num_kmers);    
+        }
+        let total_count = kmers.iter().map(|x| *x.value()).sum::<u64>();
+        let total_unique_kmers = kmers.iter().filter(|x| *x.value() > 2).count().to_formatted_string(&Locale::en);
+        println!("Total count: {}", total_count.to_formatted_string(&Locale::en));
+        println!("Total unique: {}", total_unique_kmers);
         println!("Elapsed time: {} seconds", elapsed);
-        println!("Processing rate: {} reads/second", fq_lock.num_reads as f64 / elapsed);
+        let proc_rate = fq_lock.num_reads as f64 / elapsed;
+
+        println!("Processing rate: {:.2} reads/second", proc_rate);
+        // for k in kmers.iter() {
+        //     let kmer = k.key();
+        //     let count = k.value();
+        //     let kmer_str = String::from_utf8(kmer.to_vec()).unwrap();
+        //     let kmer_str = kmer_str.replace("\0", "");
+        //     println!("{}\t{}", kmer_str, count.to_formatted_string(&Locale::en));
+        // }
     }).expect("Invalid compression");
 }
