@@ -1,2 +1,8 @@
 /target
 *.f*q.gz
+src/bin/scratch.rs
+21mer_out
+count.py
+histo
+SRR17008501_1.fastq.gz.msh
+test.fastq
