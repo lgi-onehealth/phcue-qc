@@ -6,3 +6,7 @@ count.py
 histo
 SRR17008501_1.fastq.gz.msh
 test.fastq
+M_abscessus*
+fa2fq.py
+out.txt
+scratch.rs
