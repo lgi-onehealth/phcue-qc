@@ -153,17 +153,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fqrst"
-version = "0.2.0"
-dependencies = [
- "dashmap",
- "fastq",
- "hdrhistogram",
- "num-format",
- "structopt",
-]
-
-[[package]]
 name = "hdrhistogram"
 version = "7.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -353,6 +342,17 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "winapi",
+]
+
+[[package]]
+name = "ph-cue"
+version = "0.2.0"
+dependencies = [
+ "dashmap",
+ "fastq",
+ "hdrhistogram",
+ "num-format",
+ "structopt",
 ]
 
 [[package]]
