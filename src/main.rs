@@ -15,11 +15,15 @@ use hdrhistogram::Histogram;
 use num_format::{Locale, ToFormattedString};
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "example", about = "An example of StructOpt usage.")]
+#[structopt(name = "ph-cue", about = "An example of StructOpt usage.")]
 struct Opt {
     /// Input file
     #[structopt(parse(from_os_str))]
     input: PathBuf,
+
+    // Number of threads
+    #[structopt(short = "t", long = "threads", default_value = "1")]
+    threads: usize,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -107,7 +111,7 @@ fn main() {
     eprintln!("Starting to parse file...");
     let start = Instant::now();
     parse_path(Some(&opt.input), |parser| {
-        let n_threads = 8;
+        let n_threads = opt.threads;
         let local_stats = Arc::clone(&fastq_stats);
         let local_kmers = Arc::clone(&kmers);
         let _results: Vec<u32> = parser
