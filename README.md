@@ -8,13 +8,37 @@ purposes.
 ## Running
 
 ```bash
-ph-cue [-t int] <fastq-file> > <summary_text>
+ph-cue [-t int] [-m int] <fastq-file> > <summary_text>
 ```
+
+The required input:
+    * `fastq-file`: a FASTQ file, typically the R1 for paired-end sequencing where we would have fewer errors.
+
+The options include:
+    * `-t` or `--threads`: the number of threads to use for parallelization.
+    * `-m` or `--min-count`: the minimum number of times a kmer must be observed to be included in the summary.
 
 Get help:
 
 ```bash
 ph-cue -h
+
+ph-cue 0.2.0
+A fast and simple summary of FASTQ.
+
+USAGE:
+    ph-cue [OPTIONS] <input>
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -m, --min-count <min-count>     [default: 3]
+    -t, --threads <threads>         [default: 1]
+
+ARGS:
+    <input>    Input file
 ```
 
 Get the current version:
