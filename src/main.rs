@@ -3,16 +3,14 @@ extern crate fastq;
 extern crate hdrhistogram;
 extern crate num_format;
 
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-// use std::sync::atomic::{AtomicU32, AtomicU64};
 use dashmap::DashMap;
-use std::time::Instant;
-use structopt::StructOpt;
-// use bloom::{ASMS, BloomFilter};
 use fastq::{parse_path, Record};
 use hdrhistogram::Histogram;
 use num_format::{Locale, ToFormattedString};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "ph-cue", about = "A fast and simple summary of FASTQ.")]
@@ -110,8 +108,6 @@ fn main() {
     eprintln!("Working on: {:?}", opt.input);
     let fastq_stats = Arc::new(Mutex::new(FastqStats::new()));
     let kmers = Arc::new(DashMap::with_capacity(10_000_000));
-    // let mut bf: BloomFilter = BloomFilter::with_rate(0.01, 10_000_000);
-    // let mut kmer_counter: HashMap<String, u64> = HashMap::with_capacity(10_000_000);
     eprintln!("Starting to parse file...");
     let start = Instant::now();
     parse_path(Some(&opt.input), |parser| {
@@ -154,13 +150,6 @@ fn main() {
                                 a = 0;
                             }
                         }
-                        // let rc_win = dna::revcomp(_record.seq()).into_iter().rev().collect::<Vec<u8>>();
-                        // let seq_win = _record.seq().windows(kmer_len);
-                        // seq_win.zip(rc_win.windows(kmer_len)).for_each(|ks| {
-                        //     let k1 = ks.0.clone().to_vec();
-                        //     let mut k2 = ks.1.clone().to_vec();
-                        //     k2.reverse();
-                        //     *local_kmers.entry(std::cmp::min(k1, k2)).or_insert(0) += 1});
                     }
                 }
                 let mut ls = local_stats.lock().unwrap();
@@ -184,10 +173,6 @@ fn main() {
             "Total kmers: {}",
             kmers.len().to_formatted_string(&Locale::en)
         );
-        // for i in 1..50 {
-        //     let num_kmers = kmers.iter().filter(|x| *x.value() == i).count().to_formatted_string(&Locale::en);
-        //     println!("Unique kmers with count of {}: {}", i, num_kmers);
-        // }
         let total_count = kmers.iter().map(|x| *x.value()).sum::<u64>();
         let mut hist = Histogram::<u64>::new(2).unwrap();
         kmers.iter().filter(|c| *c.value() > 1).for_each(|c| {
@@ -219,13 +204,6 @@ fn main() {
         let proc_rate = fq_lock.num_reads as f64 / elapsed;
 
         println!("Processing rate: {:.2} reads/second", proc_rate);
-        // for k in kmers.iter() {
-        //     let kmer = k.key();
-        //     let count = k.value();
-        //     let kmer_str = String::from_utf8(kmer.to_vec()).unwrap();
-        //     let kmer_str = kmer_str.replace("\0", "");
-        //     println!("{}\t{}", kmer_str, count.to_formatted_string(&Locale::en));
-        // }
     })
     .expect("Invalid compression");
 }
