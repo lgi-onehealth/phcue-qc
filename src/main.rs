@@ -3,38 +3,60 @@ extern crate fastq;
 extern crate hdrhistogram;
 extern crate num_format;
 
+use clap::Parser;
 use dashmap::DashMap;
 use fastq::{parse_path, Record};
 use hdrhistogram::Histogram;
 use num_format::{Locale, ToFormattedString};
+use serde::{Deserialize, Serialize};
+// use serde_json::Result;
+use find_peaks::PeakFinder;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use structopt::StructOpt;
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "ph-cue", about = "A fast and simple summary of FASTQ.")]
+#[derive(Debug, Parser)]
+#[clap(
+    name = "ph-cue",
+    version,
+    about = "A fast and simple summary of FASTQ."
+)]
 struct Opt {
     /// Input file
-    #[structopt(parse(from_os_str))]
+    #[clap(parse(from_os_str))]
     input: PathBuf,
 
     // Number of threads
-    #[structopt(short = "t", long = "threads", default_value = "1")]
+    #[clap(short = 't', long = "threads", default_value = "1")]
     threads: usize,
 
-    // Number of threads
-    #[structopt(short = "m", long = "min-count", default_value = "3")]
+    // Minimum kmer count to consider a kmer
+    #[clap(short = 'm', long = "min-count", default_value = "3")]
     min_count: u64,
+
+    // Whether the experiment is single_end
+    #[clap(short = 's', long = "single-end")]
+    single_end: bool,
+
+    // Whether to output the results in JSON
+    #[clap(short = 'j', long = "json")]
+    json: bool,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 struct FastqStats {
     num_reads: u32,
     num_bases: u64,
     min_read_len: u16,
     max_read_len: u16,
+    #[serde(skip)]
     total_q_score: u64,
+    depth_coverage: u64,
+    genome_size: u64,
+    mean_q_score: f64,
+    #[serde(skip)]
+    multiplier: u8,
 }
 
 impl FastqStats {
@@ -45,6 +67,10 @@ impl FastqStats {
             min_read_len: std::u16::MAX,
             max_read_len: 0,
             total_q_score: 0,
+            depth_coverage: 0,
+            genome_size: 0,
+            multiplier: 2,
+            mean_q_score: 0.0,
         }
     }
 
@@ -63,21 +89,68 @@ impl FastqStats {
         self.total_q_score += local_total_q_score;
     }
 
-    fn print_stats(self, offset: Option<f64>) {
+    fn update_multiplier(&mut self, single_end: bool) {
+        self.multiplier = if single_end { 1 } else { 2 };
+    }
+
+    fn get_depth_coverage(&mut self, hist: &Histogram<u64>, min_count: &u64) {
+        // let mut depth_coverage: u64 = 0;
+        // let mut count_value: u64 = 0;
+        let counts: Vec<i64> = hist
+            .iter_recorded()
+            .map(|x| x.count_at_value() as i64)
+            .collect();
+        let values: Vec<u64> = hist
+            .iter_recorded()
+            .map(|x| x.value_iterated_to())
+            .collect();
+        let mut pf = PeakFinder::new(&counts);
+        pf.with_min_prominence(10);
+        pf.with_min_height(10);
+        let peaks = pf.find_peaks();
+        // for v in hist.iter_recorded() {
+        //     if v.value_iterated_to() < *min_count {
+        //         continue;
+        //     }
+        //     if v.count_at_value() > count_value {
+        //         depth_coverage = v.value_iterated_to();
+        //         count_value = v.count_at_value();
+        //         println!(
+        //             "depth_coverage: {}\t count_value: {}",
+        //             depth_coverage, count_value
+        //         );
+        //     }
+        // }
+        self.depth_coverage = values[peaks[0].middle_position() as usize];
+    }
+
+    fn get_genome_size(&mut self, kmers: &Arc<DashMap<u64, u64>>, min_count: &u64) {
+        self.genome_size = kmers.iter().filter(|x| *x.value() > *min_count).count() as u64;
+    }
+
+    fn print_stats(self) {
         println!(
             "Total reads: {}",
-            self.num_reads.to_formatted_string(&Locale::en)
+            (self.multiplier as u32 * self.num_reads).to_formatted_string(&Locale::en)
         );
         println!(
             "Total bases: {}",
-            self.num_bases.to_formatted_string(&Locale::en)
+            (self.multiplier as u64 * self.num_bases).to_formatted_string(&Locale::en)
+        );
+        println!(
+            "Estimated genome size: {}",
+            self.genome_size.to_formatted_string(&Locale::en)
         );
         println!("Min read len: {}", self.min_read_len);
         println!("Max read len: {}", self.max_read_len);
-        println!("Mean Q score: {:.2}", self.mean_q_score(offset));
+        println!("Mean Q score: {:.2}", self.mean_q_score);
+        println!(
+            "Depth of coverage: {}",
+            self.multiplier as u64 * self.depth_coverage
+        );
     }
 
-    fn _get(self) -> (u32, u64, u16, u16, u64, u64) {
+    fn _get(self) -> (u32, u64, u16, u16, u64, u64, u64) {
         (
             self.num_reads,
             self.num_bases,
@@ -85,11 +158,16 @@ impl FastqStats {
             self.max_read_len,
             self.total_q_score,
             self.total_q_score,
+            self.depth_coverage,
         )
     }
 
-    fn mean_q_score(self, offset: Option<f64>) -> f64 {
-        (self.total_q_score as f64 / self.num_bases as f64) - offset.unwrap_or(33.0)
+    fn get_mean_q_score(&mut self, offset: Option<f64>) -> f64 {
+        if self.mean_q_score == 0.0 {
+            self.mean_q_score =
+                (self.total_q_score as f64 / self.num_bases as f64) - offset.unwrap_or(33.0)
+        }
+        return self.mean_q_score;
     }
 }
 
@@ -106,6 +184,7 @@ fn transform(base: char) -> u64 {
 fn main() {
     let opt = Opt::from_args();
     eprintln!("Working on: {:?}", opt.input);
+    let _filename = opt.input.clone().file_name().unwrap().to_str().unwrap();
     let fastq_stats = Arc::new(Mutex::new(FastqStats::new()));
     let kmers = Arc::new(DashMap::with_capacity(10_000_000));
     eprintln!("Starting to parse file...");
@@ -167,43 +246,25 @@ fn main() {
         eprintln!("Finished processing file.");
         let qual_offset = 33.0;
         let elapsed = start.elapsed().as_millis() as f64 * 0.001;
-        let fq_lock = fastq_stats.lock().unwrap();
-        fq_lock.print_stats(Some(qual_offset));
-        println!(
-            "Total kmers: {}",
-            kmers.len().to_formatted_string(&Locale::en)
-        );
-        let total_count = kmers.iter().map(|x| *x.value()).sum::<u64>();
         let mut hist = Histogram::<u64>::new(2).unwrap();
         kmers.iter().filter(|c| *c.value() > 1).for_each(|c| {
             hist += *c.value() as u64;
         });
-        let mut depth_coverage: u64 = 0;
-        let mut count_value: u64 = 0;
-        for v in hist.iter_recorded() {
-            if v.value_iterated_to() < opt.min_count {
-                continue;
-            }
-            if v.count_at_value() > count_value {
-                depth_coverage = v.value_iterated_to();
-                count_value = v.count_at_value();
-            }
+        let mut fq_lock = fastq_stats.lock().unwrap();
+        fq_lock.update_multiplier(opt.single_end);
+        fq_lock.get_depth_coverage(&hist, &opt.min_count);
+        fq_lock.get_genome_size(&kmers, &opt.min_count);
+        fq_lock.get_mean_q_score(Some(qual_offset));
+        if opt.json {
+            let serialized = serde_json::to_string_pretty(fq_lock.deref()).unwrap();
+            println!("{}", serialized);
+        } else {
+            fq_lock.print_stats();
         }
-        let total_unique_kmers = kmers
-            .iter()
-            .filter(|x| *x.value() > opt.min_count)
-            .count()
-            .to_formatted_string(&Locale::en);
-        println!(
-            "Total count: {}",
-            total_count.to_formatted_string(&Locale::en)
-        );
-        println!("Estimated depth coverage: {}X", depth_coverage);
-        println!("Total unique: {}", total_unique_kmers);
-        println!("Elapsed time: {} seconds", elapsed);
+        eprintln!("Elapsed time: {} seconds", elapsed);
         let proc_rate = fq_lock.num_reads as f64 / elapsed;
 
-        println!("Processing rate: {:.2} reads/second", proc_rate);
+        eprintln!("Processing rate: {:.2} reads/second", proc_rate);
     })
     .expect("Invalid compression");
 }

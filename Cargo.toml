@@ -4,8 +4,12 @@ version = "0.3.0"
 edition = "2018"
 
 [dependencies]
-structopt = "^0.3"
+
 fastq = "*"
 num-format = "*"
 dashmap = "*"
 hdrhistogram = "*"
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_json = "1.0"
+clap = { version = "3.2.10", features = ["derive"] }
+find_peaks = "0.1.5"
