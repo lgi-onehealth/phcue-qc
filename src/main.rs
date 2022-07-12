@@ -193,19 +193,17 @@ fn main() {
         kmers.iter().filter(|c| *c.value() > 1).for_each(|c| {
             hist += *c.value() as u64;
         });
-        // println!("5'th percentile: {}", hist.value_at_quantile(0.05));
-        // println!("25'th percentile: {}", hist.value_at_quantile(0.25));
-        // println!("50'th percentile: {}", hist.value_at_quantile(0.5));
-        // println!("75'th percentile: {}", hist.value_at_quantile(0.75));
-        // println!("95'th percentile: {}", hist.value_at_quantile(0.95));
-        // for v in hist.iter_recorded() {
-        //     println!(
-        //         "{:.2}'th percentile of data is {} with {} samples",
-        //         v.percentile(),
-        //         v.value_iterated_to(),
-        //         v.count_at_value()
-        //     );
-        // }
+        let mut depth_coverage: u64 = 0;
+        let mut count_value: u64 = 0;
+        for v in hist.iter_recorded() {
+            if v.value_iterated_to() < opt.min_count {
+                continue;
+            }
+            if v.count_at_value() > count_value {
+                depth_coverage = v.value_iterated_to();
+                count_value = v.count_at_value();
+            }
+        }
         let total_unique_kmers = kmers
             .iter()
             .filter(|x| *x.value() > opt.min_count)
@@ -215,6 +213,7 @@ fn main() {
             "Total count: {}",
             total_count.to_formatted_string(&Locale::en)
         );
+        println!("Estimated depth coverage: {}X", depth_coverage);
         println!("Total unique: {}", total_unique_kmers);
         println!("Elapsed time: {} seconds", elapsed);
         let proc_rate = fq_lock.num_reads as f64 / elapsed;
