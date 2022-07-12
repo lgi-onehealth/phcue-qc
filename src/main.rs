@@ -15,7 +15,7 @@ use hdrhistogram::Histogram;
 use num_format::{Locale, ToFormattedString};
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "ph-cue", about = "An example of StructOpt usage.")]
+#[structopt(name = "ph-cue", about = "A fast and simple summary of FASTQ.")]
 struct Opt {
     /// Input file
     #[structopt(parse(from_os_str))]
@@ -24,6 +24,10 @@ struct Opt {
     // Number of threads
     #[structopt(short = "t", long = "threads", default_value = "1")]
     threads: usize,
+
+    // Number of threads
+    #[structopt(short = "m", long = "min-count", default_value = "3")]
+    min_count: u64,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -204,7 +208,7 @@ fn main() {
         // }
         let total_unique_kmers = kmers
             .iter()
-            .filter(|x| *x.value() > 10)
+            .filter(|x| *x.value() > opt.min_count)
             .count()
             .to_formatted_string(&Locale::en);
         println!(
