@@ -1,14 +1,14 @@
-# ph-cue: a fast and simple summary of FASTQ files
+# phcue-qc: a fast and simple summary of FASTQ files
 
 ## Background
 
-`ph-cue` (pronounced `fq`) is a simple tool for summarizing FASTQ files for quality control
+`phcue-qc` (pronounced `fq qc`) is a simple tool for summarizing FASTQ files for quality control
 purposes.
 
 ## Running
 
 ```bash
-ph-cue [-t int] [-m int] <fastq-file> > <summary_text>
+phcue-qc [-t int] [-m int] <fastq-file> > <summary_text>
 ```
 
 The required input:
@@ -21,13 +21,13 @@ The options include:
 Get help:
 
 ```bash
-ph-cue -h
+phcue-qc -h
 
-ph-cue 0.2.0
+phcue-qc 0.2.0
 A fast and simple summary of FASTQ.
 
 USAGE:
-    ph-cue [OPTIONS] <input>
+    phcue-qc [OPTIONS] <input>
 
 FLAGS:
     -h, --help       Prints help information
@@ -43,7 +43,7 @@ ARGS:
 
 Get the current version:
 ```bash
-ph-cue --version
+phcue-qc --version
 ```
 
 ## The output
