@@ -1,10 +1,9 @@
 [package]
-name = "ph-cue"
+name = "phcue-qc"
 version = "0.3.0"
 edition = "2018"
 
 [dependencies]
-
 fastq = "*"
 num-format = "*"
 dashmap = "*"
